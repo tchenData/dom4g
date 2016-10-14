@@ -1,7 +1,7 @@
 /**
  *donnie4w@gmail.com
  */
-package dom4g
+package main
 
 import (
 	"encoding/xml"
@@ -13,6 +13,10 @@ import (
 )
 
 const _VAR = "1.0.1"
+
+type Namespaces4DOM struct {
+	Namespaces map[string]string
+}
 
 type E interface {
 	ToString() string
@@ -48,13 +52,21 @@ func LoadByStream(r io.Reader) (current *Element, err error) {
 			err = errors.New("xml load error!")
 		}
 	}()
+	namespaces := map[string]string{}
 	decoder := xml.NewDecoder(r)
 	isRoot := true
+	//	isProc := false
+	isStartElement := false
 	for t, er := decoder.Token(); er == nil; t, er = decoder.Token() {
 		switch token := t.(type) {
 		case xml.StartElement:
+			isStartElement = true
 			el := new(Element)
 			el.name = token.Name.Local
+			if namespaces[token.Name.Space] != "xmlns" && len(namespaces[token.Name.Space]) > 0 {
+				//				fmt.Println(namespaces[token.Name.Space] + ":" + el.name)
+				el.name = namespaces[token.Name.Space] + ":" + el.name
+			}
 			el.Attrs = make([]*Attr, 0)
 			el.childs = make([]E, 0)
 			el.elementmap = make(map[string][]E, 0)
@@ -65,6 +77,12 @@ func LoadByStream(r io.Reader) (current *Element, err error) {
 			for _, a := range token.Attr {
 				ar := new(Attr)
 				ar.name = a.Name.Local
+				if a.Name.Space == "xmlns" {
+					ar.name = a.Name.Space + ":" + a.Name.Local
+					namespaces[a.Value] = a.Name.Local
+				} else {
+					namespaces[a.Value] = a.Name.Space
+				}
 				ar.Value = a.Value
 				el.Attrs = append(el.Attrs, ar)
 				el.attrmap[ar.name] = ar.Value
@@ -83,10 +101,18 @@ func LoadByStream(r io.Reader) (current *Element, err error) {
 			if current.parent != nil {
 				current = current.parent.(*Element)
 			}
+		case xml.Comment:
+			//			fmt.Println(string([]byte(token)))
 		case xml.CharData:
-			current.Value = string([]byte(token))
+			if isStartElement {
+				current.Value = string([]byte(token))
+			}
+		case xml.ProcInst:
+			//			isProc = true
+			//fmt.Println("ProcInst:" + token.Target + ";" + string([]byte(token.Inst)))
 		default:
-			panic("parse xml fail!")
+			//fmt.Println("default")
+			//			panic("parse xml fail!")
 		}
 	}
 	return current, nil
@@ -138,13 +164,13 @@ func (t *Element) _string() string {
 			sattr = fmt.Sprint(sattr, " ", att.name, "=", "\"", att.Value, "\"")
 		}
 	}
-	s = fmt.Sprint(s, sattr, ">")
+	s = fmt.Sprint(s, sattr, ">", "\n")
 	if len(t.childs) > 0 {
 		for _, v := range t.childs {
 			el := v.(*Element)
 			s = fmt.Sprint(s, el._string())
 		}
-		return fmt.Sprint(s, t.Value, "</", t.name, ">")
+		return fmt.Sprint(s, t.Value, "</", t.name, ">", "\n")
 	} else {
 		return toStr(t)
 	}
@@ -157,7 +183,11 @@ func toStr(t *Element) string {
 			sattr = fmt.Sprint(sattr, " ", att.name, "=", "\"", att.Value, "\"")
 		}
 	}
-	return fmt.Sprint("<", t.name, sattr, ">", t.Value, "</", t.name, ">")
+	if len(t.Value) == 0 {
+		return fmt.Sprint("<", t.name, sattr, "/>", "\n")
+	} else {
+		return fmt.Sprint("<", t.name, sattr, ">", t.Value, "</", t.name, ">\n")
+	}
 }
 
 //return child element "name"
@@ -218,6 +248,7 @@ func (t *Element) GetNodesByPath(path string) []*Element {
 		rt.lc.RLock()
 		defer rt.lc.RUnlock()
 	}
+	pathLength := len(path)
 	paths := strings.Split(path, "/")
 	if paths != nil {
 		length := len(paths)
@@ -227,7 +258,7 @@ func (t *Element) GetNodesByPath(path string) []*Element {
 			}
 			d_name := paths[length-1]
 			d_name_len := len(d_name)
-			sup_nodepath := path[:length-d_name_len]
+			sup_nodepath := substr(path, 0, pathLength-d_name_len-1) // path[:pathLength-d_name_len]
 			sup_node := t.GetNodeByPath(sup_nodepath)
 			return sup_node.Nodes(d_name)
 		}
@@ -282,9 +313,18 @@ func (t *Element) _elementLen() int64 {
 		return 1
 	}
 }
+func goNoEle() {
+	//	fmt.Println("goNoEle")
+	if err := recover(); err != nil {
+		//		return nil
+	}
+}
 
 // return all the child element "name"
 func (t *Element) Nodes(name string) []*Element {
+	if t == nil {
+		return nil
+	}
 	if t._root().isSync {
 		t._root().lc.RLock()
 		defer t._root().lc.RUnlock()
@@ -432,6 +472,7 @@ func (t *Element) Root() *Element {
 }
 
 func (t *Element) _root() *Element {
+	defer goNoEle()
 	return t.root.(*Element)
 }
 

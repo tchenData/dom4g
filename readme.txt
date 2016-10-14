@@ -11,3 +11,4 @@ dom4g提供xml简便的操作方法，如节点 增加，删除，查询，属�
 4、修改 path查找时出现的bug
 5、处理 带有自定义namespace的xml 元素处理
 6、输出时，换行符的添加
+7、ProcInst 处理。xml.Header处理 <?xml version="1.0" encoding="UTF-8"?>

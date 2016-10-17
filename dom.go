@@ -43,6 +43,7 @@ type Element struct {
 	r          E
 	root       E
 	isSync     bool
+	level      int
 }
 
 func LoadByStream(r io.Reader) (current *Element, err error) {
@@ -54,6 +55,7 @@ func LoadByStream(r io.Reader) (current *Element, err error) {
 	}()
 	namespaces := map[string]string{}
 	decoder := xml.NewDecoder(r)
+	levelFlag := 1
 	isRoot := true
 	//	isProc := false
 	isStartElement := false
@@ -90,7 +92,11 @@ func LoadByStream(r io.Reader) (current *Element, err error) {
 			if isRoot {
 				isRoot = false
 				el.root = el
+				levelFlag = 1
+				el.level = levelFlag
 			} else {
+				levelFlag++
+				el.level = levelFlag
 				current.childs = append(current.childs, el)
 				current.elementmap[el.name] = append(current.elementmap[el.name], el)
 				el.parent = current
@@ -98,6 +104,7 @@ func LoadByStream(r io.Reader) (current *Element, err error) {
 			}
 			current = el
 		case xml.EndElement:
+			levelFlag--
 			if current.parent != nil {
 				current = current.parent.(*Element)
 			}
@@ -157,7 +164,11 @@ func NewElement(elementName, elementValue string) (el *Element) {
 }
 
 func (t *Element) _string() string {
-	s := fmt.Sprint("<", t.name)
+	startStr := ""
+	for i := 1; i < t.level; i++ {
+		startStr += "    "
+	}
+	s := fmt.Sprint(startStr, "<", t.name)
 	sattr := ""
 	if len(t.Attrs) > 0 {
 		for _, att := range t.Attrs {
@@ -170,23 +181,27 @@ func (t *Element) _string() string {
 			el := v.(*Element)
 			s = fmt.Sprint(s, el._string())
 		}
-		return fmt.Sprint(s, t.Value, "</", t.name, ">", "\n")
+		return fmt.Sprint(s, strings.TrimSpace(t.Value), startStr, "</", t.name, ">", "\n")
 	} else {
 		return toStr(t)
 	}
 }
 
 func toStr(t *Element) string {
+	startStr := ""
+	for i := 1; i < t.level; i++ {
+		startStr += "    "
+	}
 	sattr := ""
 	if len(t.Attrs) > 0 {
 		for _, att := range t.Attrs {
 			sattr = fmt.Sprint(sattr, " ", att.name, "=", "\"", att.Value, "\"")
 		}
 	}
-	if len(t.Value) == 0 {
-		return fmt.Sprint("<", t.name, sattr, "/>", "\n")
+	if len(strings.TrimSpace(t.Value)) == 0 {
+		return fmt.Sprint(startStr, "<", t.name, sattr, "/>", "\n")
 	} else {
-		return fmt.Sprint("<", t.name, sattr, ">", t.Value, "</", t.name, ">\n")
+		return fmt.Sprint(startStr, "<", t.name, sattr, ">", strings.TrimSpace(t.Value), "</", t.name, ">\n")
 	}
 }
 
@@ -260,6 +275,9 @@ func (t *Element) GetNodesByPath(path string) []*Element {
 			d_name_len := len(d_name)
 			sup_nodepath := substr(path, 0, pathLength-d_name_len-1) // path[:pathLength-d_name_len]
 			sup_node := t.GetNodeByPath(sup_nodepath)
+			if sup_node == nil {
+				return nil
+			}
 			return sup_node.Nodes(d_name)
 		}
 	}
